@@ -5,10 +5,9 @@ import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { BookOpen, Braces, Check, ChevronDown, Clock3, Command, DatabaseZap, FileCode2, KeyRound, Layers3, Link2, ListFilter, Play, RotateCcw, Rows3, Table2, UploadCloud, WandSparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
-type Column = { name: string; type: string; primary: boolean; foreign: boolean };
-type SchemaTable = { name: string; columns: Column[]; count: number };
-type QueryResult = { columns: string[]; values: (string | number | null | Uint8Array)[][] };
+import { quote, readSchema, showValue, type SchemaTable, type QueryResult } from "@/lib/sqlite";
+import { exercises } from "@/lib/exercises";
+import ExerciseStudio from "./exercise-studio";
 
 const demoSql = `CREATE TABLE cursos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, area TEXT NOT NULL);
 CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT NOT NULL, idade INTEGER NOT NULL);
@@ -22,24 +21,6 @@ const examples = [
   { label: "Praticar JOIN", icon: Link2, sql: "SELECT a.nome AS aluno, c.nome AS curso, m.nota\nFROM matriculas AS m\nJOIN alunos AS a ON a.id = m.aluno_id\nJOIN cursos AS c ON c.id = m.curso_id\nORDER BY m.nota DESC;" },
   { label: "Agrupar resultados", icon: ListFilter, sql: "SELECT c.nome AS curso, COUNT(*) AS total_alunos, ROUND(AVG(m.nota), 1) AS media\nFROM matriculas AS m\nJOIN cursos AS c ON c.id = m.curso_id\nGROUP BY c.id, c.nome\nORDER BY media DESC;" },
 ];
-const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
-function readSchema(db: Database): SchemaTable[] {
-  const names = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")[0]?.values ?? [];
-  return names.map(([raw]) => {
-    const name = String(raw);
-    const info = db.exec(`PRAGMA table_info(${quote(name)})`)[0]?.values ?? [];
-    const keys = db.exec(`PRAGMA foreign_key_list(${quote(name)})`)[0]?.values ?? [];
-    const foreign = new Set(keys.map((row) => String(row[3])));
-    const count = Number(db.exec(`SELECT COUNT(*) FROM ${quote(name)}`)[0]?.values[0]?.[0] ?? 0);
-    return { name, count, columns: info.map((row) => ({ name: String(row[1]), type: String(row[2] || "—"), primary: Number(row[5]) > 0, foreign: foreign.has(String(row[1])) })) };
-  });
-}
-function showValue(value: string | number | null | Uint8Array) {
-  if (value === null) return "NULL";
-  if (value instanceof Uint8Array) return `[BLOB · ${value.length} bytes]`;
-  return String(value);
-}
-
 export default function Home() {
   const engine = useRef<SqlJsStatic | null>(null);
   const database = useRef<Database | null>(null);
@@ -58,6 +39,9 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
   const [runCount, setRunCount] = useState(0);
+  const [view, setView] = useState<"lab" | "exercises">("lab");
+  const [openedExercises, setOpenedExercises] = useState(false);
+  const openExercises = () => { setOpenedExercises(true); setView("exercises"); };
 
   useEffect(() => {
     let cancelled = false;
@@ -160,15 +144,19 @@ export default function Home() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><DatabaseZap size={19}/></div><span>atlas<span className="brand-dot">.</span><small>SQL LAB</small></span></div>
+      <nav className="mode-nav" aria-label="Áreas da aplicação"><button type="button" className={view === "lab" ? "active" : ""} onClick={() => setView("lab")}><Braces size={16}/> Laboratório</button><button type="button" className={view === "exercises" ? "active" : ""} onClick={openExercises}><BookOpen size={16}/> Exercícios <small>{exercises.length}</small></button></nav>
+      <div hidden={view !== "lab"}>
       <div className="sidebar-label">WORKSPACE <span /></div>
       <button type="button" className="database-selector" onClick={() => fileInput.current?.click()}><span className="database-icon"><FileCode2 size={18}/></span><span className="database-name"><strong>{name}</strong><small>{schema.length} {schema.length === 1 ? "tabela" : "tabelas"} no banco</small></span><ChevronDown size={15}/></button>
       <div className="sidebar-title">TABELAS <span>{schema.length}</span></div>
       <nav className="table-nav" aria-label="Tabelas do banco">{schema.length ? schema.map((table) => <button type="button" key={table.name} className={activeTable === table.name ? "active" : ""} onClick={() => viewTable(table.name)}><Table2 size={16}/><span>{table.name}</span><small>{table.count}</small></button>) : <p>Importe um script para ver as tabelas.</p>}</nav>
+      </div>
+      {view === "exercises" && <div className="study-sidebar-summary"><div className="sidebar-label">BASE DE ESTUDO <span /></div><div><DatabaseZap size={17}/><span><strong>Universidade</strong><small>16 tabelas · 238 registros</small></span></div><p>Exercícios dos quatro roteiros SQL/JOIN organizados em uma trilha.</p></div>}
       <div className="sidebar-bottom"><div className="sidebar-tip"><BookOpen size={18}/><strong>Espaço de prática</strong><p>Explore tabelas, teste consultas e aprenda fazendo.</p></div><div className="sidebar-status"><i/> SQLite no navegador <span>v1.0</span></div></div>
     </aside>
     <div className="main-shell">
-      <header className="topbar"><div className="breadcrumb">Workspace <span>/</span><strong>{name}</strong></div><div className="topbar-right"><span><i/> Ambiente local</span><b>S</b></div></header>
-      <main className="content">
+      <header className="topbar"><div className="breadcrumb">Workspace <span>/</span><strong>{view === "lab" ? name : "Exercícios"}</strong></div><div className="mobile-mode-nav"><button type="button" className={view === "lab" ? "active" : ""} onClick={() => setView("lab")}>Lab</button><button type="button" className={view === "exercises" ? "active" : ""} onClick={openExercises}>Exercícios</button></div><div className="topbar-right"><span><i/> Ambiente local</span><b>S</b></div></header>
+      <main className="content" hidden={view !== "lab"}>
         <div className="page-heading"><div><div className="eyebrow"><i/> SEU AMBIENTE DE ESTUDOS</div><h1>Laboratório SQL<span>.</span></h1><p>Explore a estrutura, escreva consultas e veja os dados ganharem sentido.</p></div><div className="heading-actions"><input ref={fileInput} type="file" accept=".sql,text/plain,application/sql" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); }}/><Button variant="outline" onClick={loadDemo} disabled={!ready}><RotateCcw size={15}/> Restaurar exemplo</Button><Button className="import-button" onClick={() => fileInput.current?.click()} disabled={!ready || busy}><UploadCloud size={17}/> {busy ? "Importando..." : "Importar .sql"}</Button></div></div>
         <div className="stats"><div className="stat"><span className="stat-icon purple"><Layers3 size={17}/></span><span><strong>{schema.length}</strong><small>Tabelas</small></span></div><div className="stat"><span className="stat-icon blue"><Rows3 size={17}/></span><span><strong>{totalRows}</strong><small>Registros</small></span></div><div className="stat"><span className="stat-icon orange"><Braces size={17}/></span><span><strong>{runCount}</strong><small>Consultas executadas</small></span></div><p>Compatível com sintaxe SQLite</p></div>
         <section className="schema-section"><div className="section-heading"><div><small>MAPA DO BANCO</small><h2>Estrutura das tabelas <span>{schema.length}</span></h2></div><p>Clique em uma tabela para explorar</p></div><div className="schema-grid">{schema.length ? schema.map((table, index) => <button type="button" key={table.name} className={`schema-card ${activeTable === table.name ? "selected" : ""}`} onClick={() => viewTable(table.name)}><div className="card-heading"><span className={`table-icon color-${index % 4}`}><Table2 size={17}/></span><span><strong>{table.name}</strong><small>{table.count} {table.count === 1 ? "registro" : "registros"}</small></span><b>↗</b></div><div className="columns">{table.columns.slice(0,5).map((column) => <div key={column.name}><span>{column.primary ? <KeyRound size={13} className="primary-key"/> : column.foreign ? <Link2 size={13} className="foreign-key"/> : <i/>}{column.name}</span><code>{column.type}</code></div>)}{table.columns.length > 5 && <p>+ {table.columns.length - 5} colunas</p>}</div><div className="card-footer"><span>{table.columns.length} colunas</span><span>Ver dados →</span></div></button>) : <div className="schema-empty"><Table2 size={25}/><strong>Nenhuma tabela encontrada</strong><span>Importe um arquivo SQL com CREATE TABLE para começar.</span></div>}</div></section>
@@ -176,6 +164,7 @@ export default function Home() {
         <section className="results-panel"><div className="panel-heading"><div><span className="panel-icon green"><Rows3 size={18}/></span><span><strong>Resultados</strong><small>{resultTitle}</small></span></div>{duration !== null && <span className="duration"><Clock3 size={13}/>{duration} ms</span>}</div><div className="result-tabs"><button type="button" className={tab === "dados" ? "active" : ""} onClick={() => setTab("dados")}>Dados {result && <span>{result.values.length}</span>}</button><button type="button" className={tab === "estrutura" ? "active" : ""} onClick={() => setTab("estrutura")}>Estrutura</button></div>{error && <div className="message error"><X size={15}/><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Fechar erro"><X size={13}/></button></div>}{notice && !error && <div className="message success"><Check size={15}/><span>{notice}</span><button type="button" onClick={() => setNotice(null)} aria-label="Fechar aviso"><X size={13}/></button></div>}<div className="result-content">{tab === "dados" ? (result ? <><Table className="result-table"><TableHeader><TableRow>{result.columns.map((column,index) => <TableHead key={index}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>{result.values.slice(0,100).map((row,rowIndex) => <TableRow key={rowIndex}>{row.map((value,colIndex) => <TableCell key={colIndex} className={value === null ? "null-value" : ""}>{showValue(value)}</TableCell>)}</TableRow>)}</TableBody></Table>{result.values.length === 0 && <p className="empty-result">A consulta não retornou registros.</p>}</> : <p className="empty-result">Execute uma consulta para ver os resultados.</p>) : (selected ? <div className="structure-list">{selected.columns.map((column) => <div key={column.name}><span>{column.primary ? <KeyRound size={15}/> : column.foreign ? <Link2 size={15}/> : <i/>}{column.name}</span><span>{column.type}{column.primary && <em>PRIMARY KEY</em>}{column.foreign && <em>FOREIGN KEY</em>}</span></div>)}</div> : <p className="empty-result">Selecione uma tabela para ver a estrutura.</p>)}</div><div className="result-footer"><span>{tab === "dados" ? `${result?.values.length ?? 0} registros exibidos` : `${selected?.columns.length ?? 0} colunas`}</span><span><i/>{ready ? "Pronto para consultar" : "Iniciando banco..."}</span></div></section></div>
         <footer className="page-footer"><span>Feito para aprender SQL, uma consulta de cada vez.</span><span>Seus dados ficam nesta aba do navegador.</span></footer>
       </main>
+      {openedExercises && <div hidden={view !== "exercises"}><ExerciseStudio/></div>}
     </div>
   </div>;
 }
