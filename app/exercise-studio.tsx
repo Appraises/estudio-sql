@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import initSqlJs, { type Database } from "sql.js";
-import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Database as DatabaseIcon, KeyRound, Link2, Play, RotateCcw, Rows3, Table2, Terminal, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Database as DatabaseIcon, KeyRound, Link2, Play, RotateCcw, Table2, Terminal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { exercises } from "@/lib/exercises";
@@ -34,7 +34,6 @@ export default function ExerciseStudio() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
   const exercise = exercises[index];
   const query = drafts[exercise.id] ?? "";
   const relevant = useMemo(() => new Set(exercise.tables), [exercise.tables]);
@@ -102,7 +101,6 @@ export default function ExerciseStudio() {
       setResult(null);
       setError(null);
       setNotice(null);
-      setDuration(null);
     });
     return () => { active = false; };
   }, [index, ready, exercise.tables]);
@@ -113,24 +111,20 @@ export default function ExerciseStudio() {
     setResult(null);
     setError(null);
     setNotice(null);
-    setDuration(null);
   };
 
   const runQuery = () => {
     const current = db.current;
     if (!current || !query.trim()) return;
     setError(null); setNotice(null);
-    const started = performance.now();
     try {
       const outputs = current.exec(adaptQuery(query));
       const output = outputs.at(-1);
       setResult(output ? { columns: output.columns, values: output.values } : null);
       setSchema(readSchema(current));
-      setDuration(Math.max(1, Math.round(performance.now() - started)));
       if (!output) setNotice(`${current.getRowsModified()} linha(s) alterada(s).`);
     } catch (cause) {
       setResult(null);
-      setDuration(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
@@ -147,7 +141,6 @@ export default function ExerciseStudio() {
       setNotice("Base Universidade restaurada.");
       setError(null);
       setResult(null);
-      setDuration(null);
     }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
 
@@ -180,8 +173,7 @@ export default function ExerciseStudio() {
             <div className="panel-heading"><div><span className="panel-icon"><Terminal size={18}/></span><span><strong>Sua resposta SQL</strong><small>Rascunho salvo no navegador</small></span></div><span className="sql-badge">● &nbsp;SQL</span></div>
             <div className="editor-area"><div className="line-numbers" aria-hidden="true">{query.split("\n").map((_, line) => <div key={line}>{line + 1}</div>)}</div><textarea ref={editor} aria-label="Sua resposta SQL" spellCheck={false} value={query} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); runQuery(); } else if (event.key === "Tab") { event.preventDefault(); const start = event.currentTarget.selectionStart; const end = event.currentTarget.selectionEnd; updateDraft(query.slice(0, start) + "  " + query.slice(end)); requestAnimationFrame(() => editor.current?.setSelectionRange(start + 2, start + 2)); } }} placeholder={`-- Escreva a solução do exercício ${exercise.id} aqui`}/></div>
             <div className="editor-footer"><span>Ctrl / ⌘ + Enter</span><Button className="run-button" disabled={!ready || !query.trim()} onClick={runQuery}><Play size={14} fill="currentColor"/> Executar consulta</Button></div>
-            <div className="exercise-terminal" aria-live="polite">
-              <div className="exercise-terminal-heading"><div><Rows3 size={15}/><strong>Resultado da sua resposta</strong><span>{result ? `${result.values.length} ${result.values.length === 1 ? "registro" : "registros"}` : error ? "Erro na consulta" : notice ? "Comando executado" : "Aguardando execução"}</span></div>{duration !== null && <small>{duration} ms</small>}</div>
+            <div className="exercise-terminal" aria-label="Saída da consulta SQL" aria-live="polite">
               <div className="exercise-terminal-body">
                 {loadingError ? <p className="terminal-message terminal-error"><X size={14}/>{loadingError}</p>
                   : error ? <p className="terminal-message terminal-error"><X size={14}/>{error}</p>
