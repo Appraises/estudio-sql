@@ -30,7 +30,6 @@ export default function ExerciseStudio() {
   const [completed, setCompleted] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [hydrated, setHydrated] = useState(false);
-  const [activeTable, setActiveTable] = useState<string | null>(null);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -38,7 +37,6 @@ export default function ExerciseStudio() {
   const query = drafts[exercise.id] ?? "";
   const relevant = useMemo(() => new Set(exercise.tables), [exercise.tables]);
   const relatedTables = schema.filter((table) => relevant.has(table.name));
-  const selected = schema.find((table) => table.name === activeTable);
   const relationships = relatedTables.flatMap((table) =>
     table.columns.flatMap((column) =>
       column.references && relevant.has(column.references.table)
@@ -97,7 +95,6 @@ export default function ExerciseStudio() {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      setActiveTable(exercise.tables[0] ?? null);
       setResult(null);
       setError(null);
       setNotice(null);
@@ -163,11 +160,10 @@ export default function ExerciseStudio() {
       </aside>
       <div className="exercise-main">
         <section className="challenge-card"><div className="challenge-meta"><span className="challenge-index">EXERCÍCIO {exercise.id}</span><span>{exercise.topic} · PDF V4, pág. {exercise.page}</span></div><h2>{exercise.title}</h2><p className="challenge-prompt">{exercise.prompt}</p>{exercise.note && <p className="challenge-note"><CircleAlert size={15}/>{exercise.note}</p>}
-          <div className="challenge-tables"><div><Table2 size={15}/><strong>Tabelas deste exercício</strong></div><div className="table-chips">{exercise.tables.map((tableName) => <button type="button" key={tableName} className={activeTable === tableName ? "active" : ""} onClick={() => setActiveTable(tableName)}>{tableName}</button>)}</div></div>
-          {selected && <div className="exercise-inspector"><div className="exercise-inspector-heading"><strong>Estrutura de <code>{selected.name}</code></strong><span>{selected.count} registros · {selected.columns.length} colunas</span></div><div className="exercise-inspector-columns">{selected.columns.map((column) => <div key={column.name}><span>{column.primary ? <KeyRound size={13}/> : column.foreign ? <Link2 size={13}/> : <i/>}<code>{column.name}</code></span><span><small>{column.type}</small>{column.primary && <em>PK</em>}{column.references && <em>FK → {column.references.table}.{column.references.column}</em>}</span></div>)}</div></div>}
           {relationships.length > 0 && <div className="relationship-list"><Link2 size={14}/><div>{relationships.slice(0, 6).map((relation) => <code key={relation}>{relation}</code>)}{relationships.length > 6 && <span>+{relationships.length - 6} ligações</span>}</div></div>}
           <div className="challenge-actions"><Button variant="outline" onClick={() => selectExercise(index - 1)} disabled={index === 0}><ArrowLeft size={14}/> Anterior</Button><span>{index + 1} de {exercises.length}</span><Button variant="outline" onClick={() => selectExercise(index + 1)} disabled={index === exercises.length - 1}>Próximo <ArrowRight size={14}/></Button></div>
         </section>
+        <section className="exercise-schema-section"><div className="section-heading"><div><small>MAPA DO EXERCÍCIO</small><h2>Estrutura das tabelas <span>{relatedTables.length}</span></h2></div></div><div className="schema-grid exercise-schema-grid">{relatedTables.map((table, position) => <div key={table.name} className="schema-card"><div className="card-heading"><span className={`table-icon color-${position % 4}`}><Table2 size={17}/></span><span><strong>{table.name}</strong><small>{table.count} {table.count === 1 ? "registro" : "registros"}</small></span></div><div className="columns">{table.columns.slice(0, 5).map((column) => <div key={column.name}><span>{column.primary ? <KeyRound size={13} className="primary-key"/> : column.foreign ? <Link2 size={13} className="foreign-key"/> : <i/>}{column.name}</span><code>{column.type}</code></div>)}{table.columns.length > 5 && <p>+ {table.columns.length - 5} colunas</p>}</div><div className="card-footer"><span>{table.columns.length} colunas</span><span>Estrutura da base</span></div></div>)}</div></section>
         <div className="exercise-work">
           <section className="editor-panel">
             <div className="panel-heading"><div><span className="panel-icon"><Terminal size={18}/></span><span><strong>Sua resposta SQL</strong><small>Rascunho salvo no navegador</small></span></div><span className="sql-badge">● &nbsp;SQL</span></div>
