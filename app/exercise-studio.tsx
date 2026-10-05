@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Data
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { exercises } from "@/lib/exercises";
-import { quote, readSchema, showValue, type QueryResult, type SchemaTable } from "@/lib/sqlite";
+import { readSchema, showValue, type QueryResult, type SchemaTable } from "@/lib/sqlite";
 
 const topics = ["SQL básico", "JOIN", "OUTER JOIN", "Agregações"] as const;
 const storageKey = "atlas-sql-exercises-v1";
@@ -32,10 +32,8 @@ export default function ExerciseStudio() {
   const [hydrated, setHydrated] = useState(false);
   const [activeTable, setActiveTable] = useState<string | null>(null);
   const [result, setResult] = useState<QueryResult | null>(null);
-  const [resultTitle, setResultTitle] = useState("Prévia da tabela");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [resultTab, setResultTab] = useState<"dados" | "estrutura">("dados");
   const [duration, setDuration] = useState<number | null>(null);
   const exercise = exercises[index];
   const query = drafts[exercise.id] ?? "";
@@ -90,11 +88,6 @@ export default function ExerciseStudio() {
       next.exec(sql);
       db.current = next;
       setSchema(readSchema(next));
-      const firstTable = exercises[0].tables[0];
-      const first = next.exec(`SELECT * FROM ${quote(firstTable)} LIMIT 100;`)[0];
-      setActiveTable(firstTable);
-      setResult(first ? { columns: first.columns, values: first.values } : null);
-      setResultTitle(firstTable);
       setReady(true);
     }).catch((cause) => setLoadingError(cause instanceof Error ? cause.message : String(cause)));
     return () => { cancelled = true; db.current?.close(); db.current = null; };
@@ -105,40 +98,22 @@ export default function ExerciseStudio() {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      const tableName = exercise.tables[0] ?? null;
-      setActiveTable(tableName);
-      if (tableName && db.current) {
-        const output = db.current.exec(`SELECT * FROM ${quote(tableName)} LIMIT 100;`)[0];
-        setResult(output ? { columns: output.columns, values: output.values } : null);
-        setResultTitle(tableName);
-      } else {
-        setResult(null);
-        setResultTitle("Prévia da tabela");
-      }
-      setResultTab("dados");
+      setActiveTable(exercise.tables[0] ?? null);
+      setResult(null);
       setError(null);
       setNotice(null);
       setDuration(null);
     });
     return () => { active = false; };
-  }, [index, ready, exercise.tables]); // The active exercise determines its initial table preview.
+  }, [index, ready, exercise.tables]);
 
   const selectExercise = (next: number) => setIndex(Math.min(Math.max(next, 0), exercises.length - 1));
-  const updateDraft = (value: string) => setDrafts((previous) => ({ ...previous, [exercise.id]: value }));
-
-  const inspectTable = (tableName: string) => {
-    const current = db.current;
-    if (!current) return;
-    try {
-      const output = current.exec(`SELECT * FROM ${quote(tableName)} LIMIT 100;`)[0];
-      setActiveTable(tableName);
-      setResult(output ? { columns: output.columns, values: output.values } : null);
-      setResultTitle(tableName);
-      setResultTab("dados");
-      setError(null);
-      setNotice(null);
-      setDuration(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  const updateDraft = (value: string) => {
+    setDrafts((previous) => ({ ...previous, [exercise.id]: value }));
+    setResult(null);
+    setError(null);
+    setNotice(null);
+    setDuration(null);
   };
 
   const runQuery = () => {
@@ -150,12 +125,11 @@ export default function ExerciseStudio() {
       const outputs = current.exec(adaptQuery(query));
       const output = outputs.at(-1);
       setResult(output ? { columns: output.columns, values: output.values } : null);
-      setResultTitle(output ? "Resultado da sua consulta" : "Comando executado");
       setSchema(readSchema(current));
-      setResultTab("dados");
       setDuration(Math.max(1, Math.round(performance.now() - started)));
       if (!output) setNotice(`${current.getRowsModified()} linha(s) alterada(s).`);
     } catch (cause) {
+      setResult(null);
       setDuration(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -173,7 +147,6 @@ export default function ExerciseStudio() {
       setNotice("Base Universidade restaurada.");
       setError(null);
       setResult(null);
-      setResultTitle("Base restaurada");
       setDuration(null);
     }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
@@ -197,12 +170,30 @@ export default function ExerciseStudio() {
       </aside>
       <div className="exercise-main">
         <section className="challenge-card"><div className="challenge-meta"><span className="challenge-index">EXERCÍCIO {exercise.id}</span><span>{exercise.topic} · PDF V4, pág. {exercise.page}</span></div><h2>{exercise.title}</h2><p className="challenge-prompt">{exercise.prompt}</p>{exercise.note && <p className="challenge-note"><CircleAlert size={15}/>{exercise.note}</p>}
-          <div className="challenge-tables"><div><Table2 size={15}/><strong>Tabelas deste exercício</strong></div><div className="table-chips">{exercise.tables.map((tableName) => <button type="button" key={tableName} className={activeTable === tableName ? "active" : ""} onClick={() => inspectTable(tableName)}>{tableName}</button>)}</div></div>
+          <div className="challenge-tables"><div><Table2 size={15}/><strong>Tabelas deste exercício</strong></div><div className="table-chips">{exercise.tables.map((tableName) => <button type="button" key={tableName} className={activeTable === tableName ? "active" : ""} onClick={() => setActiveTable(tableName)}>{tableName}</button>)}</div></div>
+          {selected && <div className="exercise-inspector"><div className="exercise-inspector-heading"><strong>Estrutura de <code>{selected.name}</code></strong><span>{selected.count} registros · {selected.columns.length} colunas</span></div><div className="exercise-inspector-columns">{selected.columns.map((column) => <div key={column.name}><span>{column.primary ? <KeyRound size={13}/> : column.foreign ? <Link2 size={13}/> : <i/>}<code>{column.name}</code></span><span><small>{column.type}</small>{column.primary && <em>PK</em>}{column.references && <em>FK → {column.references.table}.{column.references.column}</em>}</span></div>)}</div></div>}
           {relationships.length > 0 && <div className="relationship-list"><Link2 size={14}/><div>{relationships.slice(0, 6).map((relation) => <code key={relation}>{relation}</code>)}{relationships.length > 6 && <span>+{relationships.length - 6} ligações</span>}</div></div>}
           <div className="challenge-actions"><Button variant="outline" onClick={() => selectExercise(index - 1)} disabled={index === 0}><ArrowLeft size={14}/> Anterior</Button><span>{index + 1} de {exercises.length}</span><Button variant="outline" onClick={() => selectExercise(index + 1)} disabled={index === exercises.length - 1}>Próximo <ArrowRight size={14}/></Button></div>
         </section>
-        <div className="exercise-work"><section className="editor-panel"><div className="panel-heading"><div><span className="panel-icon"><Terminal size={18}/></span><span><strong>Sua resposta SQL</strong><small>Rascunho salvo no navegador</small></span></div><span className="sql-badge">● &nbsp;SQL</span></div><div className="editor-area"><div className="line-numbers" aria-hidden="true">{query.split("\n").map((_, line) => <div key={line}>{line + 1}</div>)}</div><textarea ref={editor} aria-label="Sua resposta SQL" spellCheck={false} value={query} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); runQuery(); } else if (event.key === "Tab") { event.preventDefault(); const start = event.currentTarget.selectionStart; const end = event.currentTarget.selectionEnd; updateDraft(query.slice(0, start) + "  " + query.slice(end)); requestAnimationFrame(() => editor.current?.setSelectionRange(start + 2, start + 2)); } }} placeholder={`-- Escreva a solução do exercício ${exercise.id} aqui`}/></div><div className="editor-footer"><span>Ctrl / ⌘ + Enter</span><Button className="run-button" disabled={!ready || !query.trim()} onClick={runQuery}><Play size={14} fill="currentColor"/> Executar consulta</Button></div><div className="exercise-editor-note">A base foi adaptada para SQLite. Ao executar, <code>universidade.</code> é removido e <code>ILIKE</code> vira <code>LIKE</code>.</div></section>
-          <section className="results-panel"><div className="panel-heading"><div><span className="panel-icon green"><Rows3 size={18}/></span><span><strong>Dados e resultados</strong><small>{resultTitle}</small></span></div>{duration !== null && <span className="duration">{duration} ms</span>}</div><div className="result-tabs"><button type="button" className={resultTab === "dados" ? "active" : ""} onClick={() => setResultTab("dados")}>Dados {result && <span>{result.values.length}</span>}</button><button type="button" className={resultTab === "estrutura" ? "active" : ""} onClick={() => setResultTab("estrutura")}>Estrutura</button></div>{error && <div className="message error"><X size={15}/><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Fechar erro"><X size={13}/></button></div>}{notice && !error && <div className="message success"><Check size={15}/><span>{notice}</span><button type="button" onClick={() => setNotice(null)} aria-label="Fechar aviso"><X size={13}/></button></div>}<div className="result-content">{loadingError ? <p className="empty-result">{loadingError}</p> : resultTab === "dados" ? (result ? <><Table className="result-table"><TableHeader><TableRow>{result.columns.map((column, position) => <TableHead key={position}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>{result.values.slice(0, 100).map((row, rowIndex) => <TableRow key={rowIndex}>{row.map((value, colIndex) => <TableCell key={colIndex} className={value === null ? "null-value" : ""}>{showValue(value)}</TableCell>)}</TableRow>)}</TableBody></Table>{result.values.length === 0 && <p className="empty-result">Nenhum registro retornado.</p>}</> : <p className="empty-result">{ready ? "Execute uma consulta ou abra uma tabela." : "Carregando a base Universidade..."}</p>) : (selected ? <div className="structure-list">{selected.columns.map((column) => <div key={column.name}><span>{column.primary ? <KeyRound size={15}/> : column.foreign ? <Link2 size={15}/> : <i/>}{column.name}</span><span>{column.type}{column.primary && <em>PRIMARY KEY</em>}{column.references && <em>→ {column.references.table}.{column.references.column}</em>}</span></div>)}</div> : <p className="empty-result">Selecione uma tabela acima.</p>)}</div><div className="result-footer"><span>{resultTab === "dados" ? `${result?.values.length ?? 0} registros exibidos` : `${selected?.columns.length ?? 0} colunas`}</span><span><i/>{ready ? "Base pronta" : "Carregando..."}</span></div></section></div>
+        <div className="exercise-work">
+          <section className="editor-panel">
+            <div className="panel-heading"><div><span className="panel-icon"><Terminal size={18}/></span><span><strong>Sua resposta SQL</strong><small>Rascunho salvo no navegador</small></span></div><span className="sql-badge">● &nbsp;SQL</span></div>
+            <div className="editor-area"><div className="line-numbers" aria-hidden="true">{query.split("\n").map((_, line) => <div key={line}>{line + 1}</div>)}</div><textarea ref={editor} aria-label="Sua resposta SQL" spellCheck={false} value={query} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); runQuery(); } else if (event.key === "Tab") { event.preventDefault(); const start = event.currentTarget.selectionStart; const end = event.currentTarget.selectionEnd; updateDraft(query.slice(0, start) + "  " + query.slice(end)); requestAnimationFrame(() => editor.current?.setSelectionRange(start + 2, start + 2)); } }} placeholder={`-- Escreva a solução do exercício ${exercise.id} aqui`}/></div>
+            <div className="editor-footer"><span>Ctrl / ⌘ + Enter</span><Button className="run-button" disabled={!ready || !query.trim()} onClick={runQuery}><Play size={14} fill="currentColor"/> Executar consulta</Button></div>
+            <div className="exercise-terminal" aria-live="polite">
+              <div className="exercise-terminal-heading"><div><Rows3 size={15}/><strong>Resultado da sua resposta</strong><span>{result ? `${result.values.length} ${result.values.length === 1 ? "registro" : "registros"}` : error ? "Erro na consulta" : notice ? "Comando executado" : "Aguardando execução"}</span></div>{duration !== null && <small>{duration} ms</small>}</div>
+              <div className="exercise-terminal-body">
+                {loadingError ? <p className="terminal-message terminal-error"><X size={14}/>{loadingError}</p>
+                  : error ? <p className="terminal-message terminal-error"><X size={14}/>{error}</p>
+                  : notice ? <p className="terminal-message terminal-success"><Check size={14}/>{notice}</p>
+                  : result ? <div className="exercise-terminal-table"><Table className="result-table"><TableHeader><TableRow>{result.columns.map((column, position) => <TableHead key={position}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>{result.values.slice(0, 100).map((row, rowIndex) => <TableRow key={rowIndex}>{row.map((value, colIndex) => <TableCell key={colIndex} className={value === null ? "null-value" : ""}>{showValue(value)}</TableCell>)}</TableRow>)}</TableBody></Table>{result.values.length === 0 && <p className="terminal-message">Consulta executada. Nenhum registro retornado.</p>}</div>
+                  : <p className="terminal-message terminal-idle"><span className="terminal-prompt">›</span>{ready ? "Execute sua resposta para ver o resultado aqui." : "Carregando a base Universidade..."}</p>}
+              </div>
+              {result && result.values.length > 100 && <div className="exercise-terminal-footer">Mostrando os primeiros 100 de {result.values.length} registros</div>}
+            </div>
+            <div className="exercise-editor-note">A base foi adaptada para SQLite. Ao executar, <code>universidade.</code> é removido e <code>ILIKE</code> vira <code>LIKE</code>.</div>
+          </section>
+        </div>
         <div className="exercise-bottom"><Button className={completed.includes(exercise.id) ? "complete-button completed" : "complete-button"} onClick={toggleComplete}>{completed.includes(exercise.id) ? <CheckCircle2 size={16}/> : <Check size={16}/>} {completed.includes(exercise.id) ? "Concluído" : "Marcar como concluído"}</Button><Button variant="outline" onClick={() => selectExercise(index + 1)} disabled={index === exercises.length - 1}>Próximo exercício <ArrowRight size={15}/></Button></div>
       </div>
     </div>
