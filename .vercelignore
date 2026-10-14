@@ -1,0 +1,8 @@
+.npm-deploy-cache/
+.sites-runtime/
+.agents/
+.codex/
+outputs/
+work/
+dist/
+.wrangler/
